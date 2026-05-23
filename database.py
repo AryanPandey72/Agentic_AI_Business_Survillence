@@ -6,15 +6,26 @@ from typing import List, Dict
 
 load_dotenv()
 
-# Retrieve URL from .env or Streamlit Secrets
-DATABASE_URL = os.getenv("DATABASE_URL")
+# Attempt to load from Streamlit secrets, fallback to environment variable
+try:
+    import streamlit as st
+    DATABASE_URL = st.secrets.get("DATABASE_URL")
+except ImportError:
+    DATABASE_URL = None
 
-# Create the engine (handles connection pooling automatically)
+# If not found in Streamlit secrets, try environment variable
+if not DATABASE_URL:
+    DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Raise a clear error if neither source provides the URL
+if not DATABASE_URL:
+    raise ValueError("❌ DATABASE_URL is not set! Please check your Streamlit Cloud Secrets or .env file.")
+
+# Create the engine
 engine = create_engine(DATABASE_URL)
 
 def init_db():
-    """Ensures tables exist. You've already created these in Supabase, 
-    but this keeps the code structure aligned."""
+    """Ensures tables exist."""
     with engine.connect() as conn:
         # Pricing Table
         conn.execute(text('''
@@ -50,7 +61,7 @@ def init_db():
         conn.commit()
 
 def insert_atomic_records(records: List[Dict], extraction_date: str = None) -> bool:
-    """Inserts records using SQLAlchemy's connection context."""
+    """Inserts records using SQLAlchemy."""
     if not records:
         return False
         
@@ -59,7 +70,6 @@ def insert_atomic_records(records: List[Dict], extraction_date: str = None) -> b
 
     try:
         with engine.connect() as conn:
-            # We prepare the records as a list of dictionaries for SQLAlchemy
             data_to_insert = [
                 {
                     "extraction_date": extraction_date,

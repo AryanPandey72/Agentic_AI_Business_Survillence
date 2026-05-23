@@ -1,0 +1,25 @@
+# --- Python Internals & Environment ---
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.venv/
+env/
+.env
+.pytest_cache/
+config.cpython-313.pyc
+config.cpython-313.pyc
+
+# --- Project Specific Data (CRITICAL) ---
+# We never push our raw intelligence or database files to GitHub
+competitor_intelligence.db
+competitor_intelligence.db-journal
+competitor_intelligence_legacy.db
+data/raw/
+data/structured/
+
+# --- IDE & Editor Settings ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

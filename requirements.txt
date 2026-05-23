@@ -3,6 +3,8 @@ python-dotenv
 
 # --- The Scrapers (Pricing & HR) ---
 firecrawl-py
+requests
+beautifulsoup4
 
 # --- The Brain (LLM & Schemas) ---
 google-genai
@@ -10,11 +12,16 @@ pydantic
 
 # --- News Pipeline: Ingestion & Cleaning ---
 feedparser
-requests
-beautifulsoup4
 python-dateutil
 
-# --- News Pipeline: Storage & Vector Search ---
+# --- Storage & Vector Search ---
 supabase
 qdrant-client
 fastembed
+sqlalchemy
+psycopg2-binary
+
+# --- Dashboard & UI ---
+streamlit
+pandas
+plotly

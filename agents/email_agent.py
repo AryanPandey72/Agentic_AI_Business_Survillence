@@ -1,7 +1,7 @@
 # agents/email_agent.py
 import os
-import sqlite3
 from datetime import datetime
+from sqlalchemy import text
 from google import genai
 from qdrant_client import QdrantClient
 from fastembed import TextEmbedding
@@ -10,27 +10,30 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 
+# Import the shared cloud engine
+from database import engine
+
 load_dotenv()
 
 # ==========================================
 # 1. DATABASE RETRIEVAL (THE TRIGGERS)
 # ==========================================
-def get_todays_hr_roles(vendor: str, db_path: str) -> list:
-    """Fetches any new jobs posted today for the given vendor."""
+def get_todays_hr_roles(vendor: str) -> list:
+    """Fetches any new jobs posted today for the given vendor using cloud DB."""
     current_date = datetime.now().strftime("%Y-%m-%d")
-    conn = sqlite3.connect(db_path)
-    conn.row_factory = sqlite3.Row
-    cursor = conn.cursor()
     
-    cursor.execute('''
-        SELECT title, department, location 
-        FROM hiring_records 
-        WHERE vendor COLLATE NOCASE = ? AND extraction_date = ?
-    ''', (vendor, current_date))
-    
-    jobs = [dict(row) for row in cursor.fetchall()]
-    conn.close()
-    return jobs
+    with engine.connect() as conn:
+        # Use ILIKE for case-insensitive matching in PostgreSQL
+        stmt = text('''
+            SELECT title, department, location 
+            FROM hiring_records 
+            WHERE vendor ILIKE :vendor AND extraction_date = :date
+        ''')
+        
+        result = conn.execute(stmt, {"vendor": vendor, "date": current_date})
+        # Convert SQLAlchemy rows to dictionaries
+        jobs = [dict(row._mapping) for row in result]
+        return jobs
 
 # ==========================================
 # 2. VECTOR SEARCH (THE CONTEXT)
@@ -47,10 +50,8 @@ def fetch_corroborating_news(vendor: str, search_query: str) -> str:
     embedding_model = TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
     
     try:
-        # Convert the search query into a vector
         query_vector = list(embedding_model.embed([search_query]))[0]
         
-        # Search Qdrant for the top 3 most relevant context chunks
         search_result = client.search(
             collection_name="competitor_news",
             query_vector=query_vector,
@@ -70,7 +71,6 @@ def generate_executive_summary(vendor: str, pricing_changes: list, new_jobs: lis
     api_key = os.getenv("GEMINI_API_KEY")
     client = genai.Client(api_key=api_key)
     
-    # Build the contextual query based on what we found
     news_query = f"{vendor} strategy updates"
     if pricing_changes:
         news_query += " pricing plans limits"
@@ -100,7 +100,7 @@ def generate_executive_summary(vendor: str, pricing_changes: list, new_jobs: lis
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=prompt,
-            config={'temperature': 0.2} # Keep it mostly deterministic, but allow some narrative flow
+            config={'temperature': 0.2}
         )
         return response.text
     except Exception as e:
@@ -130,7 +130,6 @@ def send_email_alert(vendor: str, email_body: str):
     msg.attach(MIMEText(email_body, 'html' if '<' in email_body else 'plain'))
 
     try:
-        # Defaults to standard Gmail SMTP. Update if using SendGrid/Resend
         server = smtplib.SMTP('smtp.gmail.com', 587)
         server.starttls()
         server.login(sender_email, sender_password)
@@ -139,22 +138,3 @@ def send_email_alert(vendor: str, email_body: str):
         print(f"✅ Intelligence brief emailed successfully for {vendor}.")
     except Exception as e:
         print(f"Failed to send email: {e}")
-
-# ==========================================
-# MAIN ORCHESTRATOR
-# ==========================================
-if __name__ == "__main__":
-    print("Initiating Intelligence Synthesis Engine...\n")
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'competitor_intelligence.db')
-    
-    # For testing, we simulate passing in a detected pricing change from main.py
-    mock_pricing_changes = [
-        "Increased Document Reads on Free Tier from 50,000 to 100,000",
-        "Added new 'Enterprise Connect' tier at $999/mo"
-    ]
-    
-    vendor = "Firebase"
-    new_hr_roles = get_todays_hr_roles(vendor, db_path)
-    
-    email_content = generate_executive_summary(vendor, mock_pricing_changes, new_hr_roles)
-    send_email_alert(vendor, email_content)

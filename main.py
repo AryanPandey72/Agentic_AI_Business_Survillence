@@ -2,13 +2,14 @@
 import os
 import glob
 from datetime import datetime
+from sqlalchemy import text # Importing text for safe SQL queries
 from config import COMPETITORS
+from database import engine, init_db, insert_atomic_records, get_latest_two_dates, get_records_for_date
 
 # Pricing Pipeline Imports
 from scrapers.pricing_scraper import scrape_and_save_pricing
 from agents.structured_parser import parse_pricing_page
 from agents.email_agent import get_todays_hr_roles, generate_executive_summary, send_email_alert
-from database import insert_atomic_records, get_records_for_date, get_latest_two_dates, init_db
 from agents.verification_engine import values_are_mathematically_equal
 
 # HR Pipeline Imports
@@ -16,7 +17,7 @@ from scrapers.hr_scraper import scrape_and_save_jobs
 from agents.hiring_checker_agent import parse_careers_page
 
 def detect_changes(vendor_name: str, old_records: list, new_records: list):
-    """Deterministically compares yesterday's database state to today's scraped state."""
+    """Deterministically compares previous database state to today's scraped state."""
     print(f"\n--- Running Deterministic Diff for {vendor_name} ---")
     changes_found = False
 
@@ -60,7 +61,6 @@ def run_pipeline():
             
         success = scrape_and_save_pricing(company_name, pricing_url)
         if not success:
-            print(f"Failed to scrape {company_name}. Skipping to next competitor.")
             continue
             
         raw_files = glob.glob(os.path.join("data", "raw", f"{company_name}_pricing_*.md"))
@@ -74,7 +74,6 @@ def run_pipeline():
         new_records = parse_pricing_page(raw_markdown, company_name)
         
         if not new_records:
-            print(f"Failed to extract atomic records for {company_name}.")
             continue
 
         latest_dates = get_latest_two_dates(company_name)
@@ -101,7 +100,6 @@ def run_hr_pipeline():
         if not careers_url:
             continue
             
-        # REAL ENVIRONMENT: Scrape active job boards and download fresh Markdown
         success = scrape_and_save_jobs(company_name, careers_url)
         if not success:
             continue
@@ -116,62 +114,53 @@ def run_hr_pipeline():
             
         new_jobs = parse_careers_page(raw_markdown, company_name)
         
-        # Accept 0 jobs as a successful run/filter
         if not new_jobs:
-            print(f"No active core-team jobs found for {company_name}. Data filtered successfully.")
+            print(f"No active core-team jobs found for {company_name}.")
             continue
 
+        # Use SQLAlchemy engine for cloud insertion
         try:
-            import sqlite3
-            db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'competitor_intelligence.db')
-            conn = sqlite3.connect(db_path)
-            cursor = conn.cursor()
-            
-            rows_to_insert = [
-                (
-                    current_run_id,
-                    j.get('vendor'),
-                    j.get('department'),
-                    j.get('title'),
-                    j.get('location'),
-                    j.get('employment_type'),
-                    'Open'
-                )
-                for j in new_jobs
-            ]
-            
-            cursor.executemany('''
-                INSERT INTO hiring_records 
-                (extraction_date, vendor, department, title, location, employment_type, status)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ''', rows_to_insert)
-            
-            conn.commit()
-            conn.close()
-            print(f"Database: Inserted {len(new_jobs)} active job records for {company_name}")
-            
+            with engine.connect() as conn:
+                stmt = text('''
+                    INSERT INTO hiring_records 
+                    (extraction_date, vendor, department, title, location, employment_type, status)
+                    VALUES (:date, :vendor, :dept, :title, :loc, :emp_type, 'Open')
+                ''')
+                
+                # Prepare data for insertion
+                data = [
+                    {
+                        "date": current_run_id,
+                        "vendor": j.get('vendor'),
+                        "dept": j.get('department'),
+                        "title": j.get('title'),
+                        "loc": j.get('location'),
+                        "emp_type": j.get('employment_type')
+                    }
+                    for j in new_jobs
+                ]
+                
+                conn.execute(stmt, data)
+                conn.commit()
+            print(f"Cloud DB: Inserted {len(new_jobs)} active job records for {company_name}")
         except Exception as e:
             print(f"Database Error on HR insert: {e}")
             
         print(f"=== Finished HR for {company_name.upper()} ===\n")
 
 if __name__ == "__main__":
-    # 1. Guarantee all database tables exist
     init_db()
-    
-    # 2. Run the full real-world execution sequence
     run_pipeline()
     run_hr_pipeline()
 
-    # 3. 🚨 NEW: Trigger the Intelligence Synthesis
     print("\n🚀 Initiating Final Intelligence Synthesis...\n")
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'competitor_intelligence.db')
     
+    # NOTE: You must also update email_agent.py to use the engine instead of sqlite3!
     vendor_to_track = "Firebase" 
-    new_hr_roles = get_todays_hr_roles(vendor_to_track, db_path)
+    new_hr_roles = get_todays_hr_roles(vendor_to_track) # Removed db_path
     
     if new_hr_roles:
         email_content = generate_executive_summary(vendor_to_track, [], new_hr_roles)
         send_email_alert(vendor_to_track, email_content)
     else:
-        print(f"No actionable intelligence found today for {vendor_to_track}. Standing by.")
+        print(f"No actionable intelligence found today for {vendor_to_track}.")

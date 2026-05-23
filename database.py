@@ -1,56 +1,56 @@
-# database.py
-import sqlite3
 import os
+from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
 from datetime import datetime
 from typing import List, Dict
 
-# Force an absolute path so Python never gets confused about the file location
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_PATH = os.path.join(BASE_DIR, 'competitor_intelligence.db')
+load_dotenv()
+
+# Retrieve URL from .env or Streamlit Secrets
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+# Create the engine (handles connection pooling automatically)
+engine = create_engine(DATABASE_URL)
 
 def init_db():
-    """Ultimate failsafe: Creates the atomic schemas if they don't exist."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    # 1. Existing Pricing Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS pricing_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            extraction_date TEXT NOT NULL,
-            vendor TEXT NOT NULL,
-            product TEXT NOT NULL,
-            plan TEXT NOT NULL,
-            billing_cycle TEXT NOT NULL,
-            metric TEXT NOT NULL,
-            value TEXT NOT NULL,
-            unit TEXT NOT NULL,
-            source_section TEXT NOT NULL,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_lookup ON pricing_records(vendor, extraction_date)')
-    
-    # 2. NEW Hiring Table
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS hiring_records (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            extraction_date TEXT NOT NULL,
-            vendor TEXT NOT NULL,
-            department TEXT NOT NULL,
-            title TEXT NOT NULL,
-            location TEXT NOT NULL,
-            employment_type TEXT NOT NULL,
-            status TEXT DEFAULT 'Open',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    cursor.execute('CREATE INDEX IF NOT EXISTS idx_hiring_lookup ON hiring_records(vendor, extraction_date)')
-    
-    conn.commit()
-    conn.close()
+    """Ensures tables exist. You've already created these in Supabase, 
+    but this keeps the code structure aligned."""
+    with engine.connect() as conn:
+        # Pricing Table
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS pricing_records (
+                id SERIAL PRIMARY KEY,
+                extraction_date TEXT NOT NULL,
+                vendor TEXT NOT NULL,
+                product TEXT NOT NULL,
+                plan TEXT NOT NULL,
+                billing_cycle TEXT NOT NULL,
+                metric TEXT NOT NULL,
+                value TEXT NOT NULL,
+                unit TEXT NOT NULL,
+                source_section TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        '''))
+        
+        # Hiring Table
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS hiring_records (
+                id SERIAL PRIMARY KEY,
+                extraction_date TEXT NOT NULL,
+                vendor TEXT NOT NULL,
+                department TEXT NOT NULL,
+                title TEXT NOT NULL,
+                location TEXT NOT NULL,
+                employment_type TEXT NOT NULL,
+                status TEXT DEFAULT 'Open',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        '''))
+        conn.commit()
+
 def insert_atomic_records(records: List[Dict], extraction_date: str = None) -> bool:
-    """Inserts a list of flat, atomic pricing records into the database."""
+    """Inserts records using SQLAlchemy's connection context."""
     if not records:
         return False
         
@@ -58,71 +58,58 @@ def insert_atomic_records(records: List[Dict], extraction_date: str = None) -> b
         extraction_date = datetime.now().strftime('%Y-%m-%d')
 
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        
-        rows_to_insert = [
-            (
-                extraction_date,
-                r.get('vendor'),
-                r.get('product'),
-                r.get('plan'),
-                r.get('billing_cycle', 'N/A'),
-                r.get('metric'),
-                r.get('value'),
-                r.get('unit'),
-                r.get('source_section')
-            )
-            for r in records
-        ]
-        
-        cursor.executemany('''
-            INSERT INTO pricing_records 
-            (extraction_date, vendor, product, plan, billing_cycle, metric, value, unit, source_section)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ''', rows_to_insert)
-        
-        conn.commit()
-        conn.close()
-        
-        vendor_name = records[0].get('vendor') if records else 'Unknown'
-        print(f"Database: Inserted {len(records)} atomic records for {vendor_name} ({extraction_date})")
+        with engine.connect() as conn:
+            # We prepare the records as a list of dictionaries for SQLAlchemy
+            data_to_insert = [
+                {
+                    "extraction_date": extraction_date,
+                    "vendor": r.get('vendor'),
+                    "product": r.get('product'),
+                    "plan": r.get('plan'),
+                    "billing_cycle": r.get('billing_cycle', 'N/A'),
+                    "metric": r.get('metric'),
+                    "value": r.get('value'),
+                    "unit": r.get('unit'),
+                    "source_section": r.get('source_section')
+                }
+                for r in records
+            ]
+            
+            stmt = text('''
+                INSERT INTO pricing_records 
+                (extraction_date, vendor, product, plan, billing_cycle, metric, value, unit, source_section)
+                VALUES (:extraction_date, :vendor, :product, :plan, :billing_cycle, :metric, :value, :unit, :source_section)
+            ''')
+            
+            conn.execute(stmt, data_to_insert)
+            conn.commit()
+            
+        print(f"Cloud DB: Inserted {len(records)} records for {records[0].get('vendor')}")
         return True
         
     except Exception as e:
-        print(f"Database Error: Failed bulk insert. {e}")
+        print(f"Database Error: {e}")
         return False
 
 def get_records_for_date(vendor: str, extraction_date: str) -> List[Dict]:
-    """Retrieves all atomic records for a specific vendor on a specific date."""
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row 
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT * FROM pricing_records 
-        WHERE vendor COLLATE NOCASE = ? AND extraction_date = ?
-    ''', (vendor, extraction_date))
-    
-    rows = cursor.fetchall()
-    conn.close()
-    
-    return [dict(row) for row in rows]
+    """Retrieves records using SQLAlchemy."""
+    with engine.connect() as conn:
+        stmt = text('''
+            SELECT * FROM pricing_records 
+            WHERE vendor ILIKE :vendor AND extraction_date = :date
+        ''')
+        result = conn.execute(stmt, {"vendor": vendor, "date": extraction_date})
+        return [dict(row._mapping) for row in result]
 
 def get_latest_two_dates(vendor: str) -> List[str]:
-    """Finds the two most recent dates we have data for."""
-    conn = sqlite3.connect(DB_PATH)
-    cursor = conn.cursor()
-    
-    cursor.execute('''
-        SELECT DISTINCT extraction_date 
-        FROM pricing_records 
-        WHERE vendor COLLATE NOCASE = ? 
-        ORDER BY extraction_date DESC 
-        LIMIT 2
-    ''', (vendor,))
-    
-    dates = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    
-    return dates
+    """Finds the two most recent dates."""
+    with engine.connect() as conn:
+        stmt = text('''
+            SELECT DISTINCT extraction_date 
+            FROM pricing_records 
+            WHERE vendor ILIKE :vendor 
+            ORDER BY extraction_date DESC 
+            LIMIT 2
+        ''')
+        result = conn.execute(stmt, {"vendor": vendor})
+        return [row[0] for row in result]

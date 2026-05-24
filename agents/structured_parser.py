@@ -90,6 +90,12 @@ def parse_pricing_page(raw_markdown: str, vendor_name: str) -> list[dict]:
     4. Ensure the 'value' field contains ONLY numbers if possible, moving words like 'per month' to the 'unit' field.
     5. If a feature is simply a checkmark, 'included', or boolean state, set the value strictly to '1' and the unit to 'included'.
     
+    CRITICAL DATA NORMALIZATION RULES (NEW):
+    6. Storage and Bandwidth: You MUST normalize all data sizes to Gigabytes (GB). 
+       - If a plan offers 2 TB, output the value as 2000 and the unit as 'GB'.
+       - If a plan offers 500 MB, output the value as 0.5 and the unit as 'GB'.
+    7. Currency: Normalize all prices to standard numeric USD values without symbols (e.g., output 15 instead of $15).
+    
     Raw Markdown:
     {raw_markdown}
     """

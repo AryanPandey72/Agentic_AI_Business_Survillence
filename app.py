@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px  # <-- Added Plotly back for the clean charts
+import plotly.express as px
 from sqlalchemy import create_engine
 import os
 from dotenv import load_dotenv
@@ -50,9 +50,9 @@ if page == "Pricing Trends":
         
         # Filter for selected vendor
         vendor_df = df[df['vendor'] == vendor]
-        st.dataframe(vendor_df, hide_index=True)
         
-        # --- NEW EASIER TO UNDERSTAND GRAPH ---
+        # --- RAW TABLE DISPLAY REMOVED HERE ---
+        
         st.subheader(f"📈 Quota & Pricing Visualizer for {vendor}")
         
         # Create a copy and force 'value' to be numeric so the graph doesn't break on "N/A"
@@ -88,13 +88,12 @@ if page == "Pricing Trends":
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Not enough numeric data to render a graph for this vendor.")
-        # --------------------------------------
         
         # Export (Handles N/A natively and drops the index column)
         csv_data = vendor_df.fillna("N/A").to_csv(index=False).encode('utf-8')
         
         st.download_button(
-            label="Download Data as CSV",
+            label="Download Raw Data as CSV",
             data=csv_data,
             file_name=f"{vendor.lower()}_pricing_data.csv",
             mime="text/csv",

@@ -51,8 +51,6 @@ if page == "Pricing Trends":
         # Filter for selected vendor
         vendor_df = df[df['vendor'] == vendor]
         
-        # --- RAW TABLE DISPLAY REMOVED HERE ---
-        
         st.subheader(f"📈 Quota & Pricing Visualizer for {vendor}")
         
         # Create a copy and force 'value' to be numeric so the graph doesn't break on "N/A"
@@ -118,14 +116,15 @@ if page == "Strategic Market Moves":
     st.header("🚨 Strategic Market Events")
     st.markdown("Tracks major M&A, leadership changes, and funding rounds.")
     
-    df_news = fetch_data("SELECT * FROM strategic_events ORDER BY created_at DESC")
+    # FIXED: The dropdown is now permanently visible regardless of database state
+    vendor_filter = st.selectbox("Filter by Vendor", ["All", "Appwrite", "Firebase"])
+    
+    if vendor_filter == "All":
+        df_news = fetch_data("SELECT * FROM strategic_events ORDER BY created_at DESC")
+    else:
+        df_news = fetch_data(f"SELECT * FROM strategic_events WHERE vendor = '{vendor_filter}' ORDER BY created_at DESC")
     
     if not df_news.empty:
-        vendor_filter = st.selectbox("Filter by Vendor", ["All"] + list(df_news['vendor'].unique()))
-        
-        if vendor_filter != "All":
-            df_news = df_news[df_news['vendor'] == vendor_filter]
-        
         # Render the dataframe with clickable URLs
         st.dataframe(
             df_news,
@@ -135,4 +134,6 @@ if page == "Strategic Market Moves":
             hide_index=True
         )
     else:
-        st.info("✅ Radar clear: No high-level strategic events detected recently.")
+        # Dynamic intelligence message based on the dropdown selection
+        target = "the industry" if vendor_filter == "All" else vendor_filter
+        st.info(f"✅ Radar clear: No high-level strategic events detected recently for {target}.")

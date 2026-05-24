@@ -4,6 +4,7 @@ import glob
 from datetime import datetime
 from sqlalchemy import text # Importing text for safe SQL queries
 from config import COMPETITORS
+from agents.news_trigger import run_news_pipeline
 from database import engine, init_db, insert_atomic_records, get_latest_two_dates, get_records_for_date
 
 # Pricing Pipeline Imports
@@ -150,14 +151,23 @@ def run_hr_pipeline():
 
 if __name__ == "__main__":
     init_db()
+    
+    # 1. Run Pricing Scraper
     run_pipeline()
+    
+    # 2. Run HR Scraper
     run_hr_pipeline()
+
+    # 3. Run Strategic News Radar (NEW)
+    print("\n🚀 Initiating Strategic News Radar...\n")
+    for company_key in COMPETITORS.keys():
+        company_name = company_key.capitalize()
+        run_news_pipeline(company_name)
 
     print("\n🚀 Initiating Final Intelligence Synthesis...\n")
     
-    # NOTE: You must also update email_agent.py to use the engine instead of sqlite3!
     vendor_to_track = "Firebase" 
-    new_hr_roles = get_todays_hr_roles(vendor_to_track) # Removed db_path
+    new_hr_roles = get_todays_hr_roles(vendor_to_track)
     
     if new_hr_roles:
         email_content = generate_executive_summary(vendor_to_track, [], new_hr_roles)

@@ -58,6 +58,19 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         '''))
+
+        # Strategic Events Table (NEW)
+        conn.execute(text('''
+            CREATE TABLE IF NOT EXISTS strategic_events (
+                id SERIAL PRIMARY KEY,
+                extraction_date TEXT NOT NULL,
+                vendor TEXT NOT NULL,
+                category TEXT NOT NULL,
+                title TEXT NOT NULL,
+                url TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        '''))
         conn.commit()
 
 def insert_atomic_records(records: List[Dict], extraction_date: str = None) -> bool:

@@ -116,13 +116,11 @@ if page == "Strategic Market Moves":
     st.header("🚨 Strategic Market Events")
     st.markdown("Tracks major M&A, leadership changes, and funding rounds.")
     
-    # FIXED: The dropdown is now permanently visible regardless of database state
-    vendor_filter = st.selectbox("Filter by Vendor", ["All", "Appwrite", "Firebase"])
+    # FIXED: The dropdown now strictly offers specific vendors, just like the HR tab
+    vendor_filter = st.selectbox("Select Vendor", ["Appwrite", "Firebase"])
     
-    if vendor_filter == "All":
-        df_news = fetch_data("SELECT * FROM strategic_events ORDER BY created_at DESC")
-    else:
-        df_news = fetch_data(f"SELECT * FROM strategic_events WHERE vendor = '{vendor_filter}' ORDER BY created_at DESC")
+    # Query strictly filters by the selected vendor right away
+    df_news = fetch_data(f"SELECT * FROM strategic_events WHERE vendor = '{vendor_filter}' ORDER BY created_at DESC")
     
     if not df_news.empty:
         # Render the dataframe with clickable URLs
@@ -134,6 +132,4 @@ if page == "Strategic Market Moves":
             hide_index=True
         )
     else:
-        # Dynamic intelligence message based on the dropdown selection
-        target = "the industry" if vendor_filter == "All" else vendor_filter
-        st.info(f"✅ Radar clear: No high-level strategic events detected recently for {target}.")
+        st.info(f"✅ Radar clear: No high-level strategic events detected recently for {vendor_filter}.")

@@ -166,11 +166,11 @@ if __name__ == "__main__":
 
     print("\n🚀 Initiating Final Intelligence Synthesis...\n")
     
-    vendor_to_track = "Firebase" 
-    new_hr_roles = get_todays_hr_roles(vendor_to_track)
-    
-    if new_hr_roles:
-        email_content = generate_executive_summary(vendor_to_track, [], new_hr_roles)
-        send_email_alert(vendor_to_track, email_content)
-    else:
-        print(f"No actionable intelligence found today for {vendor_to_track}.")
+    for vendor_to_track in ["Appwrite", "Firebase"]:
+        new_hr_roles = get_todays_hr_roles(vendor_to_track)
+        
+        if new_hr_roles:
+            email_content = generate_executive_summary(vendor_to_track, [], new_hr_roles)
+            send_email_alert(vendor_to_track, email_content)
+        else:
+            print(f"No actionable intelligence found today for {vendor_to_track}.")

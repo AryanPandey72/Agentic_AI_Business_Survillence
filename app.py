@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import plotly.express as px  # <-- Added Plotly back for the clean charts
 from sqlalchemy import create_engine
 import os
 from dotenv import load_dotenv
@@ -36,7 +37,7 @@ st.sidebar.title("Surveillance Modules")
 page = st.sidebar.selectbox("Select Intelligence Module", [
     "Pricing Trends", 
     "HR Expansion Tracker",
-    "Strategic Market Moves" # <-- NEW MODULE ADDED
+    "Strategic Market Moves"
 ])
 
 # --- Pricing Module ---
@@ -51,7 +52,45 @@ if page == "Pricing Trends":
         vendor_df = df[df['vendor'] == vendor]
         st.dataframe(vendor_df, hide_index=True)
         
-        # Export (FIXED: Handles N/A natively and drops the index column)
+        # --- NEW EASIER TO UNDERSTAND GRAPH ---
+        st.subheader(f"📈 Quota & Pricing Visualizer for {vendor}")
+        
+        # Create a copy and force 'value' to be numeric so the graph doesn't break on "N/A"
+        plot_df = vendor_df.copy()
+        plot_df['value'] = pd.to_numeric(plot_df['value'], errors='coerce')
+        plot_df = plot_df.dropna(subset=['value'])
+        
+        if not plot_df.empty:
+            # Let the user pick exactly WHICH metric to look at
+            available_metrics = plot_df['metric'].unique()
+            selected_metric = st.selectbox("Select a specific metric to compare across plans:", available_metrics)
+            
+            # Filter the graph data to just that one metric
+            metric_df = plot_df[plot_df['metric'] == selected_metric]
+            
+            # Get the unit to display on the Y-axis (e.g., GB, USD)
+            unit_label = metric_df['unit'].iloc[0] if not metric_df['unit'].empty else "Value"
+            
+            # Build a clean Bar Chart
+            fig = px.bar(
+                metric_df, 
+                x="plan", 
+                y="value", 
+                color="plan",
+                title=f"Comparison of {selected_metric.replace('_', ' ').title()}",
+                labels={"value": f"Limit / Cost ({unit_label})", "plan": "Pricing Tier"},
+                text_auto=True # Displays the exact number on top of the bar
+            )
+            
+            # Clean up the look of the chart
+            fig.update_layout(xaxis_title=None, showlegend=False)
+            
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("Not enough numeric data to render a graph for this vendor.")
+        # --------------------------------------
+        
+        # Export (Handles N/A natively and drops the index column)
         csv_data = vendor_df.fillna("N/A").to_csv(index=False).encode('utf-8')
         
         st.download_button(
@@ -73,10 +112,9 @@ if page == "HR Expansion Tracker":
     if not df_hr.empty:
         st.dataframe(df_hr, hide_index=True)
     else:
-        # FIXED: UI now displays actionable intelligence instead of an error!
         st.info(f"✅ Intelligence Update: No active core-team hiring listed for {vendor} at the moment.")
 
-# --- Strategic News Module (NEW) ---
+# --- Strategic News Module ---
 if page == "Strategic Market Moves":
     st.header("🚨 Strategic Market Events")
     st.markdown("Tracks major M&A, leadership changes, and funding rounds.")
